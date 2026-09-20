@@ -45,18 +45,9 @@ export default function Home() {
 
         {/* Content */}
         <div className="relative z-10 mx-auto w-full max-w-4xl px-6 py-24 text-center md:px-12">
-          <p
-            className="mb-8 font-display text-xs font-medium tracking-[0.2em] text-[#1FFFC3]"
-            aria-hidden="true"
-          >
-            [ eque · defi ]
-          </p>
-
-          <h1 className="font-display mx-auto max-w-[16ch] text-[clamp(2.75rem,1.6rem+5vw,5rem)] leading-[1.0] font-bold tracking-[-0.03em] text-[#F4F7FA]">
-            Lorem ipsum dolor sit amet consectetur
-            <span className="block-cursor" aria-hidden="true">
-              █
-            </span>
+          <h1 className="font-display mx-auto max-w-[16ch] text-[clamp(2.75rem,1.6rem+5vw,5rem)] leading-[1.0] font-bold tracking-[-0.03em] text-balance text-[#F4F7FA]">
+            Lorem ipsum dolor sit{" "}
+            <span className="text-[#1FFFC3]">amet consectetur</span>
           </h1>
 
           <p className="font-body mx-auto mt-6 max-w-[52ch] text-lg leading-[1.6] text-[#A9B5C2]">
@@ -70,7 +61,7 @@ export default function Home() {
               href="#"
               className="pixel-notch font-display inline-flex h-11 items-center bg-[#1FFFC3] px-6 text-sm font-medium tracking-[0.02em] text-[#031A14] transition-colors duration-120 hover:bg-[#5CFFD3] hover:shadow-[0_0_24px_rgba(31,255,195,0.24)] active:translate-y-[1px] active:bg-[#00E0A4]"
             >
-              Start building
+              Launch App
             </a>
             <a
               href="#"

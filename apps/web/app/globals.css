@@ -169,18 +169,6 @@
 .bracket::before { top: -2px; left: -2px; border-right: 0; border-bottom: 0; }
 .bracket::after  { bottom: -2px; right: -2px; border-left: 0; border-top: 0; }
 
-/* Blinking block cursor */
-.block-cursor {
-  display: inline-block;
-  width: 0.6em;
-  color: var(--eque-teal);
-  animation: eque-blink 1s steps(1) infinite;
-}
-@keyframes eque-blink {
-  0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0; }
-}
-
 /* Dot grid backdrop */
 .dot-grid {
   background-image: radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px);
