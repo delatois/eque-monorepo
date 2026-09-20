@@ -1,6 +1,6 @@
 import { Hero } from "@/components/sections/hero";
-import { PixelWipe } from "@/components/sections/pixel-wipe";
-// import { Product } from "@/components/sections/product";
+import { TokenLineup } from "@/components/sections/token-lineup";
+import { ProductTeaser } from "@/components/sections/product-teaser";
 // import { CTA } from "@/components/sections/cta";
 
 /**
@@ -11,8 +11,8 @@ export default function MarketingHome() {
   return (
     <main className="bg-[#070A0F]">
       <Hero />
-      <PixelWipe />
-      {/* <Product /> */}
+      <TokenLineup />
+      <ProductTeaser />
       {/* <CTA /> */}
     </main>
   );

@@ -81,12 +81,8 @@ export function Hero() {
 
       {/* Bottom meta strip */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 border-t border-[#1A222D]">
-        <div className="font-display mx-auto flex max-w-7xl items-center justify-between px-6 py-3 text-[11px] tracking-[0.04em] text-[#718094] md:px-12">
-          <span aria-hidden="true">┌─ hero / 001 ─┐</span>
-          <span className="hidden sm:inline" aria-hidden="true">
-            ▌ ▌ ▌
-          </span>
-          <span>scroll</span>
+        <div className="font-display mx-auto flex max-w-7xl items-center justify-center px-6 py-3 text-[11px] tracking-[0.04em] text-[#718094] md:px-12">
+          <span aria-hidden="true">▌ ▌ ▌</span>
         </div>
       </div>
     </section>

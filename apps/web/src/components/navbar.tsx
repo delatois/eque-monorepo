@@ -76,8 +76,8 @@ export function Navbar() {
     <MotionConfig reducedMotion="user">
       <header className="fixed inset-x-0 top-0 z-50">
         <div className="relative mx-auto mt-3 w-full max-w-7xl px-4 sm:mt-4 sm:px-6">
-          {/* Floating bar — 64px, single line on desktop */}
-          <div className="flex h-16 items-center justify-between gap-4 border border-eque-line bg-eque-bg/80 px-4 backdrop-blur-xl sm:px-5">
+          {/* Floating bar — 64px, single line on desktop. Solid dark with teal stroke. */}
+          <div className="flex h-16 items-center justify-between gap-4 border border-[#1FFFC3]/30 bg-[#070A0F] px-4 sm:px-5">
             <a href="/" aria-label="eque home" className="shrink-0">
               <EqueWordmark className="hidden h-7 md:block" />
               <EqueLogo className="h-8 w-8 md:hidden" />
@@ -128,7 +128,7 @@ export function Navbar() {
                 initial="hidden"
                 animate="show"
                 exit="exit"
-                className="absolute inset-x-4 top-[calc(100%+8px)] z-40 border border-eque-line bg-eque-surface/95 backdrop-blur-xl sm:inset-x-6 md:hidden"
+                className="absolute inset-x-4 top-[calc(100%+8px)] z-40 border border-[#1FFFC3]/30 bg-[#070A0F] sm:inset-x-6 md:hidden"
               >
                 <motion.ul>
                   {NAV_LINKS.map((link, i) => (

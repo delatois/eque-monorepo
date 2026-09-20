@@ -1,16 +1,17 @@
 "use client";
 
-import { useRef } from "react";
-import Image from "next/image";
+import { useRef, type ReactNode } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
-const TEAL = "#1FFFC3";
-const DARK = "#070A0F";
-const INK = "#031A14";
+export const EQUE_DARK = "#070A0F";
+export const EQUE_TEAL = "#1FFFC3";
+export const EQUE_INK = "#031A14";
+
+const GLYPH = "◢";
 const CELL = 34; // grid cell size in CSS px
 
 interface Cell {
@@ -24,23 +25,42 @@ interface Cell {
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
+interface PixelWipeProps {
+  /** bg color when the section starts */
+  from: string;
+  /** bg color when the wipe completes */
+  to: string;
+  /** ASCII triangle color */
+  glyphColor: string;
+  label: string;
+  /** centered reveal copy */
+  children: ReactNode;
+  /** optional absolutely-positioned floating layer (icons, etc.) */
+  floaters?: ReactNode;
+}
+
 /**
  * PixelWipe — pinned scroll-driven transition section.
  *
  * Scroll phases (single scrubbed timeline, pinned for +=300%):
- *   1. rain   — ASCII ▲ triangles fall from the top, staggered per column
- *   2. fill   — triangles lock in one by one, screen floods teal
- *   3. reveal — canvas fades, circle image + paragraph reveal on teal
+ *   1. rain   — ASCII ◢ triangles fall from the top, staggered per column
+ *   2. fill   — triangles lock in one by one, screen floods toward `to`
+ *   3. reveal — canvas fades, `floaters` + centered `children` reveal
  *
  * Canvas is driven by one shared progress value (rAF render loop);
- * DOM tweens (bg morph, content reveal) live on the scrubbed timeline.
+ * DOM tweens (bg morph, reveal) live on the scrubbed timeline.
  * prefers-reduced-motion skips straight to the final state.
  */
-export function PixelWipe() {
+export function PixelWipe({
+  from,
+  to,
+  glyphColor,
+  label,
+  children,
+  floaters,
+}: PixelWipeProps) {
   const sectionRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const contentRef = useRef<HTMLDivElement | null>(null);
-  const circleRef = useRef<HTMLDivElement | null>(null);
   const progressRef = useRef(0);
 
   useGSAP(
@@ -95,6 +115,7 @@ export function PixelWipe() {
 
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
+        ctx.fillStyle = glyphColor;
 
         for (let i = 0; i < cells.length; i++) {
           const c = cells[i];
@@ -110,22 +131,15 @@ export function PixelWipe() {
             const ease = 1 - Math.pow(1 - t, 3);
             const y = baseY - (1 - ease) * c.fallDist;
             ctx.globalAlpha = Math.min(t * 1.6, 1) * 0.9;
-            ctx.fillStyle = TEAL;
-            ctx.font = `${CELL * 0.6}px "Spline Sans Mono", monospace`;
-            ctx.fillText("▲", cx, y);
+            ctx.font = `${CELL * 0.72}px "Spline Sans Mono", monospace`;
+            ctx.fillText(GLYPH, cx, y);
           } else {
-            // lock-in pop, then solid triangle
+            // lock-in pop, then solid glyph
             const lt = Math.min((p - c.fillAt) / 0.04, 1);
             const pop = 0.6 + 0.4 * (1 - Math.pow(1 - lt, 2));
-            const s = CELL * 0.4 * c.jitter * pop;
             ctx.globalAlpha = 1;
-            ctx.fillStyle = TEAL;
-            ctx.beginPath();
-            ctx.moveTo(cx, baseY - s);
-            ctx.lineTo(cx + s * 0.95, baseY + s * 0.72);
-            ctx.lineTo(cx - s * 0.95, baseY + s * 0.72);
-            ctx.closePath();
-            ctx.fill();
+            ctx.font = `${CELL * 0.8 * c.jitter * pop}px "Spline Sans Mono", monospace`;
+            ctx.fillText(GLYPH, cx, baseY);
           }
         }
         ctx.globalAlpha = 1;
@@ -159,10 +173,10 @@ export function PixelWipe() {
 
       // ---- reduced motion: jump to final state ----------------------------
       if (reduceMotion) {
-        gsap.set(section, { backgroundColor: TEAL });
+        gsap.set(section, { backgroundColor: to });
         gsap.set(canvas, { display: "none" });
-        gsap.set(contentRef.current, { opacity: 1, y: 0 });
-        gsap.set(circleRef.current, { scale: 1 });
+        gsap.set(".wipe-icon", { scale: 1, autoAlpha: 1 });
+        gsap.set(".wipe-copy", { autoAlpha: 1, y: 0 });
         window.removeEventListener("resize", onResize);
         return;
       }
@@ -188,28 +202,29 @@ export function PixelWipe() {
       });
 
       tl.addLabel("rain", 0);
-      // bg morph: dark -> teal while cells lock in
-      tl.to(section, { backgroundColor: TEAL, duration: 0.5 }, 0.25);
+      // bg morph: from -> to while cells lock in
+      tl.to(section, { backgroundColor: to, duration: 0.5 }, 0.25);
       tl.addLabel("fill", 0.35);
       // canvas fades once the screen is flooded
-      tl.to(canvas, { opacity: 0, duration: 0.06 }, 0.8);
+      tl.to(canvas, { autoAlpha: 0, duration: 0.06 }, 0.8);
       tl.addLabel("reveal", 0.82);
+      if (section.querySelectorAll(".wipe-icon").length > 0) {
+        tl.fromTo(
+          ".wipe-icon",
+          { scale: 0, autoAlpha: 0 },
+          { scale: 1, autoAlpha: 1, duration: 0.08, stagger: 0.012 },
+          "reveal"
+        );
+      }
       tl.fromTo(
-        circleRef.current,
-        { scale: 0.5, opacity: 0 },
-        { scale: 1, opacity: 1, duration: 0.1 },
-        0.82
-      );
-      tl.fromTo(
-        contentRef.current,
-        { opacity: 0, y: 60 },
-        { opacity: 1, y: 0, duration: 0.12 },
-        0.84
+        ".wipe-copy",
+        { autoAlpha: 0, y: 60 },
+        { autoAlpha: 1, y: 0, duration: 0.12 },
+        "reveal+=0.02"
       );
 
       // recalc after fonts load (glyph metrics / layout)
-      const refresh = () => ScrollTrigger.refresh();
-      document.fonts?.ready.then(refresh).catch(() => {});
+      document.fonts?.ready.then(() => ScrollTrigger.refresh()).catch(() => {});
 
       return () => {
         stopLoop();
@@ -223,8 +238,8 @@ export function PixelWipe() {
     <section
       ref={sectionRef}
       className="relative h-svh overflow-hidden"
-      style={{ backgroundColor: DARK }}
-      aria-label="Pixel wipe transition"
+      style={{ backgroundColor: from }}
+      aria-label={label}
     >
       <canvas
         ref={canvasRef}
@@ -232,36 +247,11 @@ export function PixelWipe() {
         aria-hidden="true"
       />
 
-      {/* Final state: circle image + copy on teal */}
-      <div
-        ref={contentRef}
-        className="absolute inset-0 z-10 flex items-center justify-center px-6 opacity-0"
-      >
-        <div className="flex flex-col items-center text-center">
-          <p className="font-display text-[11px] tracking-[0.2em] text-[#031A14]/60">
-            ┌─ transition / 002 ─┐
-          </p>
-          <div
-            ref={circleRef}
-            className="mt-8 h-40 w-40 overflow-hidden rounded-full bg-[#070A0F] opacity-0 ring-4 ring-[#031A14]/15 md:h-48 md:w-48"
-          >
-            <Image
-              src="/eque-logo.png"
-              alt="eque"
-              width={192}
-              height={192}
-              className="h-full w-full object-contain p-10"
-            />
-          </div>
-          <h2 className="font-display mt-8 max-w-[20ch] text-3xl font-bold tracking-[-0.02em] text-balance text-[#031A14] md:text-4xl">
-            Lorem ipsum dolor sit amet
-          </h2>
-          <p className="font-body mt-4 max-w-[52ch] leading-[1.6] text-[#031A14]/75">
-            Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do
-            eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim
-            ad minim veniam, quis nostrud exercitation ullamco laboris.
-          </p>
-        </div>
+      {floaters}
+
+      {/* Centered reveal copy */}
+      <div className="wipe-copy absolute inset-0 z-10 flex items-center justify-center px-6">
+        {children}
       </div>
     </section>
   );

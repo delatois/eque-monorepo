@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Spline_Sans_Mono, Inter } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
+import { SmoothScroll } from "@/components/smooth-scroll";
 
 const splineSansMono = Spline_Sans_Mono({
   subsets: ["latin"],
@@ -32,7 +33,7 @@ export default function RootLayout({
       className={cn("dark", splineSansMono.variable, inter.variable)}
     >
       <body className="bg-[#070A0F] text-[#E4EAF0] antialiased">
-        {children}
+        <SmoothScroll>{children}</SmoothScroll>
       </body>
     </html>
   );
