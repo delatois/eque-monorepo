@@ -12,7 +12,9 @@ export const EQUE_TEAL = "#1FFFC3";
 export const EQUE_INK = "#031A14";
 
 const GLYPH = "◢";
-const CELL = 34; // grid cell size in CSS px
+// smaller cells = denser grid; phones get chunkier cells (fewer glyphs to draw)
+const cellSize = () =>
+  typeof window !== "undefined" && window.innerWidth < 768 ? 46 : 34;
 
 interface Cell {
   col: number;
@@ -79,18 +81,20 @@ export function PixelWipe({
       let cells: Cell[] = [];
       let cssW = 0;
       let cssH = 0;
+      let cell = cellSize();
 
       const buildGrid = () => {
         const rect = section.getBoundingClientRect();
         cssW = rect.width;
         cssH = rect.height;
+        cell = cellSize();
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
         canvas.width = Math.max(1, Math.floor(cssW * dpr));
         canvas.height = Math.max(1, Math.floor(cssH * dpr));
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        const cols = Math.ceil(cssW / CELL);
-        const rows = Math.ceil(cssH / CELL);
+        const cols = Math.ceil(cssW / cell);
+        const rows = Math.ceil(cssH / cell);
         cells = [];
         for (let row = 0; row < rows; row++) {
           for (let col = 0; col < cols; col++) {
@@ -108,6 +112,9 @@ export function PixelWipe({
       buildGrid();
 
       // ---- canvas render --------------------------------------------------
+      // Rendered ON DEMAND only (when scroll progress changes) — never in a
+      // perpetual rAF loop. A full grid of fillText() every frame burns phone
+      // CPUs even when the user isn't scrolling or the canvas is faded out.
       const render = () => {
         const p = progressRef.current;
         ctx.clearRect(0, 0, cssW, cssH);
@@ -120,8 +127,8 @@ export function PixelWipe({
         for (let i = 0; i < cells.length; i++) {
           const c = cells[i];
           if (!c) continue;
-          const cx = (c.col + 0.5) * CELL;
-          const baseY = (c.row + 0.5) * CELL;
+          const cx = (c.col + 0.5) * cell;
+          const baseY = (c.row + 0.5) * cell;
           const filled = p >= c.fillAt;
 
           if (!filled) {
@@ -131,36 +138,18 @@ export function PixelWipe({
             const ease = 1 - Math.pow(1 - t, 3);
             const y = baseY - (1 - ease) * c.fallDist;
             ctx.globalAlpha = Math.min(t * 1.6, 1) * 0.9;
-            ctx.font = `${CELL * 0.72}px "Spline Sans Mono", monospace`;
+            ctx.font = `${cell * 0.72}px "Spline Sans Mono", monospace`;
             ctx.fillText(GLYPH, cx, y);
           } else {
             // lock-in pop, then solid glyph
             const lt = Math.min((p - c.fillAt) / 0.04, 1);
             const pop = 0.6 + 0.4 * (1 - Math.pow(1 - lt, 2));
             ctx.globalAlpha = 1;
-            ctx.font = `${CELL * 0.8 * c.jitter * pop}px "Spline Sans Mono", monospace`;
+            ctx.font = `${cell * 0.8 * c.jitter * pop}px "Spline Sans Mono", monospace`;
             ctx.fillText(GLYPH, cx, baseY);
           }
         }
         ctx.globalAlpha = 1;
-      };
-
-      // rAF loop runs only while the section is pinned/active
-      let raf = 0;
-      let running = false;
-      const loop = () => {
-        render();
-        if (running) raf = requestAnimationFrame(loop);
-      };
-      const startLoop = () => {
-        if (!running) {
-          running = true;
-          raf = requestAnimationFrame(loop);
-        }
-      };
-      const stopLoop = () => {
-        running = false;
-        cancelAnimationFrame(raf);
       };
       render(); // paint initial (empty) frame
 
@@ -193,10 +182,7 @@ export function PixelWipe({
           anticipatePin: 1,
           onUpdate: (self) => {
             progressRef.current = self.progress;
-          },
-          onToggle: (self) => {
-            if (self.isActive) startLoop();
-            else stopLoop();
+            render();
           },
         },
       });
@@ -227,7 +213,6 @@ export function PixelWipe({
       document.fonts?.ready.then(() => ScrollTrigger.refresh()).catch(() => {});
 
       return () => {
-        stopLoop();
         window.removeEventListener("resize", onResize);
       };
     },

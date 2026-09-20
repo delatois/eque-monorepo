@@ -36,9 +36,11 @@ const LAYER_CLASS: Record<FloaterIcon["layer"], string> = {
 };
 
 const SHADOW_CLASS: Record<FloaterIcon["layer"], string> = {
-  back: "drop-shadow-[0_6px_10px_rgba(0,0,0,0.45)]",
-  mid: "drop-shadow-[0_10px_18px_rgba(0,0,0,0.5)]",
-  front: "drop-shadow-[0_14px_28px_rgba(0,0,0,0.6)]",
+  // box-shadow (not drop-shadow filter): same look on circular icons,
+  // but doesn't force the browser to re-rasterize the filter every frame
+  back: "shadow-[0_6px_10px_rgba(0,0,0,0.45)]",
+  mid: "shadow-[0_10px_18px_rgba(0,0,0,0.5)]",
+  front: "shadow-[0_14px_28px_rgba(0,0,0,0.6)]",
 };
 
 /**
@@ -79,7 +81,7 @@ function Floaters() {
           key={icon.src}
           className={cn("wipe-icon absolute", icon.pos, LAYER_CLASS[icon.layer])}
         >
-          <div className={cn("float-inner", SHADOW_CLASS[icon.layer])}>
+          <div className={cn("float-inner rounded-full", SHADOW_CLASS[icon.layer])}>
             <Image
               src={icon.src}
               alt=""
