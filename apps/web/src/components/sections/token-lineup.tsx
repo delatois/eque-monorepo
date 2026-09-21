@@ -74,6 +74,22 @@ const SHADOW_CLASS: Record<OrbitIcon["layer"], string> = {
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
+// ---- scrubbed entrance --------------------------------------------------
+// Each icon owns a slice of wipe progress: it grows + disperses out from the
+// center as the user scrolls through its window. Slow scroll = slow,
+// one-by-one appearance; the section settles exactly as the icons finish.
+// Windows never overlap (LEN < STEP) so icons truly appear one at a time.
+const ENTER_START = 0.78;
+const ENTER_STEP = 0.0215;
+const ENTER_LEN = 0.02;
+const clamp01 = (t: number) => Math.min(Math.max(t, 0), 1);
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+const easeOutBack = (t: number) => {
+  const c1 = 1.30158; // softer than the default 1.70158
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+};
+
 // ---- starfield ----------------------------------------------------------
 // Deterministic pseudo-random (mulberry32): identical on SSR and client, so
 // no hydration mismatch. Tiny ink dots scattered across the section for
@@ -115,13 +131,14 @@ const STARS: Star[] = (() => {
  * Icon state machine, driven by the wipe's ScrollTrigger:
  *   - pin active + progress < 0.89 → floating (zero-g drift)
  *   - pin active + progress >= 0.94 → orbit (two elliptical rings around copy)
- *   - pin inactive → icons exit
- * Enter = icons grow from invisible (scale 0) at the center and disperse out
- * to their anchors — the "explosion" moment. Exit = converge back to the
- * center while shrinking to invisible. Opacity + transform only — no blur
- * filters, so the animation stays on the compositor and never janks.
+ *   - pin inactive → icons exit (shrink in place)
+ * Enter is SCRUB-driven: each icon owns a slice of wipe progress (0.78–0.95)
+ * and grows from invisible at the center, dispersing out to its anchor, one
+ * icon at a time — at the speed of the user's scroll. Exit = shrink back to
+ * invisible via a quick tween. Opacity + transform only — no blur filters,
+ * so the animation stays on the compositor and never janks.
  * One gsap.ticker drives every icon, but ONLY while the pin is active; a blend
- * value morphs float <-> orbit, and a disperse value flies center <-> anchor.
+ * value morphs float <-> orbit.
  */
 function Floaters({
   registerHandler,
@@ -211,10 +228,7 @@ function Floaters({
 
     // ---- shared state ---------------------------------------------------
     const blend = { v: 0 }; // 0 = floating, 1 = orbiting
-    // disperse: 0 = clustered at the center, 1 = out at the float anchors.
-    // Enter flies icons out from the center (the dispersion moment);
-    // exit converges them back.
-    const disperse = ICONS.map(() => ({ v: 0 }));
+    const prog = { v: 0 }; // latest wipe progress, mirrored for the ticker
     const mode: { name: "float" | "orbit"; active: boolean } = {
       name: "float",
       active: false,
@@ -227,8 +241,15 @@ function Floaters({
       if (!mode.active) return;
       const t = gsap.ticker.time;
       const b = blend.v;
+      const p = prog.v;
       const cx = W / 2;
       const cy = H / 2;
+      // starfield fades in across the entrance span
+      if (starfield) {
+        gsap.set(starfield, {
+          autoAlpha: clamp01((p - ENTER_START) / 0.17),
+        });
+      }
       for (let i = 0; i < outers.length; i++) {
         const el = outers[i];
         const icon = ICONS[i];
@@ -242,8 +263,17 @@ function Floaters({
           (icon.yPct / 100) * H +
           Math.cos(t * icon.speed * 0.9 + icon.phase * 1.3) * icon.ampY;
         const fr = Math.sin(t * icon.speed * 0.7 + icon.phase) * icon.rotAmp;
-        // disperse: lerp from the center out to the float anchor
-        const d = disperse[i]!.v;
+        // scrubbed entrance: this icon's own progress window. It grows from
+        // invisible at the center, then disperses out to its anchor — one
+        // icon at a time, at the speed of the user's scroll.
+        const animEl = anims[i];
+        if (!animEl) continue;
+        const lp = clamp01((p - (ENTER_START + i * ENTER_STEP)) / ENTER_LEN);
+        gsap.set(animEl, {
+          scale: lp <= 0 ? 0 : easeOutBack(lp),
+          autoAlpha: lp <= 0 ? 0 : Math.min(1, lp * 2),
+        });
+        const d = easeOutCubic(lp);
         const dx = lerp(cx, fx, d);
         const dy = lerp(cy, fy, d);
         // orbit: elliptical ring around the centered copy (stays upright)
@@ -274,7 +304,6 @@ function Floaters({
         });
       });
       gsap.set(anims, { autoAlpha: 1 });
-      disperse.forEach((d) => (d.v = 1));
       if (starfield) gsap.set(starfield, { autoAlpha: 1 });
     }
 
@@ -282,56 +311,17 @@ function Floaters({
     // transform + opacity only: from invisible (scale 0) up to full size on
     // settle, back down to invisible on exit. No blur — blur filters force a
     // re-raster every frame and are the main source of the scroll jank.
-    const enterIcons = () => {
-      gsap.killTweensOf(anims);
-      gsap.killTweensOf(disperse);
-      // grow from invisible…
-      gsap.fromTo(
-        anims,
-        { autoAlpha: 0, scale: 0 },
-        {
-          autoAlpha: 1,
-          scale: 1,
-          duration: 1.1,
-          ease: "back.out(1.6)",
-          stagger: 0.07,
-          overwrite: true,
-        }
-      );
-      // …while flying out from the center — the dispersion moment
-      gsap.to(disperse, {
-        v: 1,
-        duration: 1.5,
-        ease: "power3.out",
-        stagger: 0.06,
-        overwrite: true,
-      });
-      if (starfield) {
-        gsap.to(starfield, {
-          autoAlpha: 1,
-          duration: 2,
-          ease: "power1.out",
-          overwrite: true,
-        });
-      }
-    };
+    // ---- exit -------------------------------------------------------------
+    // Entrance is scrub-driven (see tick) — exit stays a quick tween:
+    // shrink in place to invisible. transform + opacity only, no filters.
     const exitIcons = () => {
       gsap.killTweensOf(anims);
-      gsap.killTweensOf(disperse);
-      // converge back to the center while shrinking to invisible
       gsap.to(anims, {
         autoAlpha: 0,
         scale: 0,
         duration: 0.55,
         ease: "back.in(1.5)",
         stagger: 0.03,
-        overwrite: true,
-      });
-      gsap.to(disperse, {
-        v: 0,
-        duration: 0.7,
-        ease: "power2.in",
-        stagger: 0.02,
         overwrite: true,
       });
       if (starfield) {
@@ -356,6 +346,7 @@ function Floaters({
     // ---- scroll state machine ---------------------------------------------
     const handleTrigger = (self: ScrollTrigger) => {
       if (reduceMotion) return;
+      prog.v = self.progress;
       if (!self.isActive) {
         if (mode.active) {
           mode.active = false;
@@ -365,7 +356,9 @@ function Floaters({
       }
       if (!mode.active) {
         mode.active = true;
-        enterIcons();
+        // entrance is scrub-owned now — just kill any running exit tween
+        gsap.killTweensOf(anims);
+        if (starfield) gsap.killTweensOf(starfield);
       }
       const p = self.progress;
       if (p >= 0.94) setMode("orbit");
@@ -377,7 +370,6 @@ function Floaters({
       window.removeEventListener("resize", measure);
       gsap.ticker.remove(tick);
       gsap.killTweensOf(blend);
-      gsap.killTweensOf(disperse);
       registerHandler(() => {});
     };
   }, [registerHandler]);
