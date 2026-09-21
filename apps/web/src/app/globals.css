@@ -182,3 +182,10 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------- Token lineup starfield ---------- */
+/* Opacity-only twinkle: stays on the compositor, no re-raster per frame. */
+@keyframes eque-twinkle {
+  0%, 100% { opacity: 0.1; }
+  50% { opacity: 0.55; }
+}

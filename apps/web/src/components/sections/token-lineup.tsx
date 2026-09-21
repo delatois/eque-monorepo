@@ -44,8 +44,8 @@ const ICONS: OrbitIcon[] = [
  * clearance around the centered copy, morpho-style. Counter-rotating.
  */
 const RINGS = [
-  { rx: 640, ry: 450, duration: 95, direction: 1 }, // outer — slow clockwise
-  { rx: 410, ry: 295, duration: 62, direction: -1 }, // inner — counter-clockwise
+  { rx: 640, ry: 450, duration: 120, direction: 1 }, // outer — slow clockwise
+  { rx: 410, ry: 295, duration: 85, direction: -1 }, // inner — counter-clockwise
 ];
 
 const LAYER_CLASS: Record<OrbitIcon["layer"], string> = {
@@ -74,16 +74,54 @@ const SHADOW_CLASS: Record<OrbitIcon["layer"], string> = {
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
+// ---- starfield ----------------------------------------------------------
+// Deterministic pseudo-random (mulberry32): identical on SSR and client, so
+// no hydration mismatch. Tiny ink dots scattered across the section for
+// depth — the calm starfield behind the icons, morpho-style.
+const mulberry32 = (seed: number) => {
+  return () => {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+interface Star {
+  x: number;
+  y: number;
+  s: number;
+  o: number;
+  twinkle: boolean;
+  dur: number;
+  delay: number;
+}
+
+const STARS: Star[] = (() => {
+  const rand = mulberry32(20260921);
+  return Array.from({ length: 110 }, () => ({
+    x: rand() * 100,
+    y: rand() * 100,
+    s: rand() < 0.82 ? 1 : 2,
+    o: 0.1 + rand() * 0.28,
+    twinkle: rand() < 0.22,
+    dur: 3 + rand() * 3.5,
+    delay: rand() * 5,
+  }));
+})();
+
 /**
  * Icon state machine, driven by the wipe's ScrollTrigger:
- *   - pin active + progress < 0.93 → floating (zero-g drift)
- *   - pin active + progress >= 0.97 → orbit (two elliptical rings around copy)
+ *   - pin active + progress < 0.89 → floating (zero-g drift)
+ *   - pin active + progress >= 0.94 → orbit (two elliptical rings around copy)
  *   - pin inactive → icons exit
- * Enter = grow from invisible (scale 0) to full size as the section settles.
- * Exit = shrink back to invisible. Opacity + transform only — no blur filters,
- * so the animation stays on the compositor and never janks.
+ * Enter = icons grow from invisible (scale 0) at the center and disperse out
+ * to their anchors — the "explosion" moment. Exit = converge back to the
+ * center while shrinking to invisible. Opacity + transform only — no blur
+ * filters, so the animation stays on the compositor and never janks.
  * One gsap.ticker drives every icon, but ONLY while the pin is active; a blend
- * value morphs float <-> orbit.
+ * value morphs float <-> orbit, and a disperse value flies center <-> anchor.
  */
 function Floaters({
   registerHandler,
@@ -109,6 +147,8 @@ function Floaters({
       layer.querySelectorAll<HTMLElement>("[data-floater-box]")
     );
     if (outers.length !== ICONS.length) return;
+
+    const starfield = layer.querySelector<HTMLElement>("[data-starfield]");
 
     // ---- responsive measurements --------------------------------------
     // Rings scale to fit the viewport; the copy is measured so the rings keep
@@ -171,6 +211,10 @@ function Floaters({
 
     // ---- shared state ---------------------------------------------------
     const blend = { v: 0 }; // 0 = floating, 1 = orbiting
+    // disperse: 0 = clustered at the center, 1 = out at the float anchors.
+    // Enter flies icons out from the center (the dispersion moment);
+    // exit converges them back.
+    const disperse = ICONS.map(() => ({ v: 0 }));
     const mode: { name: "float" | "orbit"; active: boolean } = {
       name: "float",
       active: false,
@@ -198,6 +242,10 @@ function Floaters({
           (icon.yPct / 100) * H +
           Math.cos(t * icon.speed * 0.9 + icon.phase * 1.3) * icon.ampY;
         const fr = Math.sin(t * icon.speed * 0.7 + icon.phase) * icon.rotAmp;
+        // disperse: lerp from the center out to the float anchor
+        const d = disperse[i]!.v;
+        const dx = lerp(cx, fx, d);
+        const dy = lerp(cy, fy, d);
         // orbit: elliptical ring around the centered copy (stays upright)
         const ang =
           (slot.idx / slot.count) * Math.PI * 2 +
@@ -205,8 +253,8 @@ function Floaters({
         const ox = cx + Math.cos(ang) * ringRx[icon.orbit]!;
         const oy = cy + Math.sin(ang) * ringRy[icon.orbit]!;
         gsap.set(el, {
-          x: lerp(fx, ox, b),
-          y: lerp(fy, oy, b),
+          x: lerp(dx, ox, b),
+          y: lerp(dy, oy, b),
           rotation: fr * (1 - b),
         });
       }
@@ -226,6 +274,8 @@ function Floaters({
         });
       });
       gsap.set(anims, { autoAlpha: 1 });
+      disperse.forEach((d) => (d.v = 1));
+      if (starfield) gsap.set(starfield, { autoAlpha: 1 });
     }
 
     // ---- enter / exit -----------------------------------------------------
@@ -234,31 +284,63 @@ function Floaters({
     // re-raster every frame and are the main source of the scroll jank.
     const enterIcons = () => {
       gsap.killTweensOf(anims);
+      gsap.killTweensOf(disperse);
+      // grow from invisible…
       gsap.fromTo(
         anims,
-        { autoAlpha: 0, scale: 0, y: 70 },
+        { autoAlpha: 0, scale: 0 },
         {
           autoAlpha: 1,
           scale: 1,
-          y: 0,
-          duration: 1.2,
-          ease: "back.out(1.5)",
-          stagger: 0.08,
+          duration: 1.1,
+          ease: "back.out(1.6)",
+          stagger: 0.07,
           overwrite: true,
         }
       );
+      // …while flying out from the center — the dispersion moment
+      gsap.to(disperse, {
+        v: 1,
+        duration: 1.5,
+        ease: "power3.out",
+        stagger: 0.06,
+        overwrite: true,
+      });
+      if (starfield) {
+        gsap.to(starfield, {
+          autoAlpha: 1,
+          duration: 2,
+          ease: "power1.out",
+          overwrite: true,
+        });
+      }
     };
     const exitIcons = () => {
       gsap.killTweensOf(anims);
+      gsap.killTweensOf(disperse);
+      // converge back to the center while shrinking to invisible
       gsap.to(anims, {
         autoAlpha: 0,
         scale: 0,
-        y: -50,
-        duration: 0.6,
-        ease: "back.in(1.4)",
-        stagger: 0.035,
+        duration: 0.55,
+        ease: "back.in(1.5)",
+        stagger: 0.03,
         overwrite: true,
       });
+      gsap.to(disperse, {
+        v: 0,
+        duration: 0.7,
+        ease: "power2.in",
+        stagger: 0.02,
+        overwrite: true,
+      });
+      if (starfield) {
+        gsap.to(starfield, {
+          autoAlpha: 0,
+          duration: 0.4,
+          overwrite: true,
+        });
+      }
     };
     const setMode = (m: "float" | "orbit") => {
       if (mode.name === m) return;
@@ -286,8 +368,8 @@ function Floaters({
         enterIcons();
       }
       const p = self.progress;
-      if (p >= 0.97) setMode("orbit");
-      else if (p <= 0.93) setMode("float");
+      if (p >= 0.94) setMode("orbit");
+      else if (p <= 0.89) setMode("float");
     };
     registerHandler(handleTrigger);
 
@@ -295,6 +377,7 @@ function Floaters({
       window.removeEventListener("resize", measure);
       gsap.ticker.remove(tick);
       gsap.killTweensOf(blend);
+      gsap.killTweensOf(disperse);
       registerHandler(() => {});
     };
   }, [registerHandler]);
@@ -307,6 +390,26 @@ function Floaters({
       className="pointer-events-none absolute inset-0 z-0"
       aria-hidden="true"
     >
+      {/* starfield — static ink dots for depth behind the icons. Twinkle is
+          opacity-only (compositor-friendly); ~1/5 of the dots twinkle. */}
+      <div data-starfield className="absolute inset-0 opacity-0">
+        {STARS.map((st, i) => (
+          <span
+            key={i}
+            className="absolute rounded-full bg-[#031A14]"
+            style={{
+              left: `${st.x}%`,
+              top: `${st.y}%`,
+              width: st.s,
+              height: st.s,
+              opacity: st.o,
+              animation: st.twinkle
+                ? `eque-twinkle ${st.dur}s ease-in-out ${st.delay}s infinite`
+                : undefined,
+            }}
+          />
+        ))}
+      </div>
       {ICONS.map((icon) => (
         <div
           key={icon.src}
@@ -343,8 +446,9 @@ function Floaters({
 
 /**
  * Section 2 — dark wipes to teal, revealing the token lineup.
- * Icons float in zero-g while the wipe runs, then settle into two
- * elliptical orbits around the copy once the section is in place.
+ * Icons disperse from the center into zero-g drift while the wipe settles,
+ * then morph into two slow elliptical orbits around the copy once the
+ * section is in place. A static starfield adds depth behind them.
  * All icons render behind the copy.
  */
 export function TokenLineup() {
