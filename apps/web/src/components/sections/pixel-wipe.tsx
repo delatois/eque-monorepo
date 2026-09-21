@@ -127,6 +127,18 @@ export function PixelWipe({
         ctx.textBaseline = "middle";
         ctx.fillStyle = glyphColor;
 
+        // ctx.font assignment is surprisingly expensive — quantize the size
+        // so it's only re-set when the rounded value actually changes
+        // (rain phase: once per frame instead of once per cell).
+        let lastFontQ = -1;
+        const setFont = (px: number) => {
+          const q = Math.round(px * 2);
+          if (q !== lastFontQ) {
+            lastFontQ = q;
+            ctx.font = `${px}px "Spline Sans Mono", monospace`;
+          }
+        };
+
         for (let i = 0; i < cells.length; i++) {
           const c = cells[i];
           if (!c) continue;
@@ -141,14 +153,14 @@ export function PixelWipe({
             const ease = 1 - Math.pow(1 - t, 3);
             const y = baseY - (1 - ease) * c.fallDist;
             ctx.globalAlpha = Math.min(t * 1.6, 1) * 0.9;
-            ctx.font = `${cell * 0.72}px "Spline Sans Mono", monospace`;
+            setFont(cell * 0.72);
             ctx.fillText(GLYPH, cx, y);
           } else {
             // lock-in pop, then solid glyph
             const lt = Math.min((p - c.fillAt) / 0.04, 1);
             const pop = 0.6 + 0.4 * (1 - Math.pow(1 - lt, 2));
             ctx.globalAlpha = 1;
-            ctx.font = `${cell * 0.8 * c.jitter * pop}px "Spline Sans Mono", monospace`;
+            setFont(cell * 0.8 * c.jitter * pop);
             ctx.fillText(GLYPH, cx, baseY);
           }
         }

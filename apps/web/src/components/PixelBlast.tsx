@@ -414,6 +414,8 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
     composer?: EffectComposer;
     touch?: ReturnType<typeof createTouchTexture>;
     liquidEffect?: Effect;
+    /** set false to permanently stop the rAF loop (cleanup/reinit) */
+    alive: boolean;
   } | null>(null);
   const prevConfigRef = useRef<ReinitConfig | null>(null);
   useEffect(() => {
@@ -434,6 +436,7 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
     if (mustReinit) {
       if (threeRef.current) {
         const t = threeRef.current;
+        t.alive = false;
         t.resizeObserver?.disconnect();
         cancelAnimationFrame(t.raf!);
         t.quad?.geometry.dispose();
@@ -453,7 +456,18 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
       });
       renderer.domElement.style.width = '100%';
       renderer.domElement.style.height = '100%';
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      // Mobile GPUs can't hold 60fps on this 5-octave shader at DPR 2 — cap
+      // at 1x on coarse pointers (visual pixel size is unchanged because
+      // uPixelSize scales with the ratio), 1.5x elsewhere.
+      const coarse =
+        typeof window !== 'undefined' &&
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(pointer: coarse)').matches;
+      renderer.setPixelRatio(coarse ? 1 : Math.min(window.devicePixelRatio || 1, 1.5));
+      // Ripple budget: fewer concurrent ripples on mobile = less per-pixel
+      // shader math (each active ripple costs exp() calls in the loop).
+      const rippleSlots = coarse ? 4 : MAX_CLICKS;
+      let lastRippleAt = 0;
       container.appendChild(renderer.domElement);
       if (transparent) renderer.setClearAlpha(0);
       else renderer.setClearColor(0x000000, 1);
@@ -569,12 +583,19 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
         };
       };
       const onPointerDown = (e: PointerEvent) => {
+        // On mobile, debounce ripple spawns: scroll gestures also fire
+        // pointerdown, and each active ripple costs GPU time in the shader.
+        if (coarse) {
+          const now = performance.now();
+          if (now - lastRippleAt < 250) return;
+          lastRippleAt = now;
+        }
         const { fx, fy } = mapToPixels(e);
         const ix = threeRef.current?.clickIx ?? 0;
         const clickPos = uniforms.uClickPos.value[ix];
         if (clickPos) clickPos.set(fx, fy);
         uniforms.uClickTimes.value[ix] = uniforms.uTime.value;
-        if (threeRef.current) threeRef.current.clickIx = (ix + 1) % MAX_CLICKS;
+        if (threeRef.current) threeRef.current.clickIx = (ix + 1) % rippleSlots;
       };
       const onPointerMove = (e: PointerEvent) => {
         if (!touch) return;
@@ -587,10 +608,29 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
       renderer.domElement.addEventListener('pointermove', onPointerMove, {
         passive: true
       });
-      let raf = 0;
+      const state = {
+        renderer,
+        scene,
+        camera,
+        material,
+        clock,
+        clickIx: 0,
+        uniforms,
+        resizeObserver: ro,
+        raf: 0,
+        quad,
+        timeOffset,
+        composer,
+        touch,
+        liquidEffect,
+        alive: true,
+      };
+      threeRef.current = state;
       const animate = () => {
+        // permanently stopped (cleanup/reinit) — never schedule again
+        if (!state.alive) return;
         if (autoPauseOffscreen && !visibilityRef.current.visible) {
-          raf = requestAnimationFrame(animate);
+          state.raf = requestAnimationFrame(animate);
           return;
         }
         uniforms.uTime.value = timeOffset + clock.getElapsedTime() * speedRef.current;
@@ -612,25 +652,9 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
           });
           composer.render();
         } else renderer.render(scene, camera);
-        raf = requestAnimationFrame(animate);
+        state.raf = requestAnimationFrame(animate);
       };
-      raf = requestAnimationFrame(animate);
-      threeRef.current = {
-        renderer,
-        scene,
-        camera,
-        material,
-        clock,
-        clickIx: 0,
-        uniforms,
-        resizeObserver: ro,
-        raf,
-        quad,
-        timeOffset,
-        composer,
-        touch,
-        liquidEffect
-      };
+      state.raf = requestAnimationFrame(animate);
     } else {
       const t = threeRef.current!;
       t.uniforms.uShapeType.value = SHAPE_MAP[variant] ?? 0;
@@ -660,6 +684,7 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
       if (threeRef.current && mustReinit) return;
       if (!threeRef.current) return;
       const t = threeRef.current;
+      t.alive = false;
       t.resizeObserver?.disconnect();
       cancelAnimationFrame(t.raf!);
       t.quad?.geometry.dispose();
@@ -692,6 +717,23 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
     color,
     speed
   ]);
+
+  // Pause the render loop while the hero is offscreen (e.g. during the pinned
+  // sections below). Previously `autoPauseOffscreen` was dead code: nothing
+  // ever flipped `visibilityRef.current.visible` to false, so the fullscreen
+  // shader burned phone GPUs at 60fps for the entire page lifetime.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        visibilityRef.current.visible = !!entry?.isIntersecting;
+      },
+      { threshold: 0 }
+    );
+    io.observe(container);
+    return () => io.disconnect();
+  }, []);
 
   return (
     <div

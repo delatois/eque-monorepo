@@ -1,4 +1,4 @@
-import PixelBlast from "@/components/PixelBlast";
+import { PixelBlastLazy } from "@/components/pixel-blast-lazy";
 
 /**
  * Hero section — full-viewport interactive PixelBlast backdrop.
@@ -18,13 +18,16 @@ export function Hero() {
       {/* PixelBlast backdrop */}
       <div className="absolute inset-0" aria-hidden="true">
         <div style={{ position: "relative", width: "100%", height: "100%" }}>
-          <PixelBlast
+          <PixelBlastLazy
             variant="triangle"
             pixelSize={5}
             color="#1FFFC3"
             patternScale={2}
             patternDensity={1}
             pixelSizeJitter={0}
+            // MSAA is redundant here — the shader already does its own
+            // edge AA (fwidth-based smoothstep in the shape masks)
+            antialias={false}
             enableRipples
             rippleSpeed={0.4}
             rippleThickness={0.12}
