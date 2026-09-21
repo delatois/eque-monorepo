@@ -28,33 +28,37 @@ interface OrbitIcon {
 
 const ICONS: OrbitIcon[] = [
   // outer ring — 4 icons
-  { src: "/images/tesla.webp",  alt: "Tesla",  size: 144, orbit: 0, xPct: 10, yPct: 14, ampX: 26, ampY: 20, speed: 0.32, phase: 0.4, rotAmp: 7, layer: "back" },
-  { src: "/images/nvidia.webp", alt: "NVIDIA", size: 144, orbit: 0, xPct: 86, yPct: 12, ampX: 22, ampY: 26, speed: 0.28, phase: 2.1, rotAmp: 6, layer: "back" },
-  { src: "/images/meta.webp",   alt: "Meta",   size: 112, orbit: 0, xPct: 8,  yPct: 74, ampX: 24, ampY: 18, speed: 0.36, phase: 4.4, rotAmp: 8, layer: "mid"  },
-  { src: "/images/apple.webp",  alt: "Apple",  size: 112, orbit: 0, xPct: 88, yPct: 72, ampX: 20, ampY: 24, speed: 0.3,  phase: 1.2, rotAmp: 5, layer: "mid"  },
+  { src: "/images/tesla.webp",  alt: "Tesla",  size: 104, orbit: 0, xPct: 12, yPct: 15, ampX: 26, ampY: 20, speed: 0.32, phase: 0.4, rotAmp: 7, layer: "back" },
+  { src: "/images/nvidia.webp", alt: "NVIDIA", size: 104, orbit: 0, xPct: 84, yPct: 13, ampX: 22, ampY: 26, speed: 0.28, phase: 2.1, rotAmp: 6, layer: "back" },
+  { src: "/images/meta.webp",   alt: "Meta",   size: 88,  orbit: 0, xPct: 10, yPct: 77, ampX: 24, ampY: 18, speed: 0.36, phase: 4.4, rotAmp: 8, layer: "mid"  },
+  { src: "/images/apple.webp",  alt: "Apple",  size: 88,  orbit: 0, xPct: 86, yPct: 75, ampX: 20, ampY: 24, speed: 0.3,  phase: 1.2, rotAmp: 5, layer: "mid"  },
   // inner ring — 4 icons
-  { src: "/images/microsoft.webp", alt: "Microsoft", size: 104, orbit: 1, xPct: 24, yPct: 30, ampX: 18, ampY: 22, speed: 0.42, phase: 3.1, rotAmp: 9,  layer: "mid"   },
-  { src: "/images/qqq.webp",       alt: "QQQ",       size: 80,  orbit: 1, xPct: 70, yPct: 26, ampX: 22, ampY: 16, speed: 0.38, phase: 5.3, rotAmp: 7,  layer: "front" },
-  { src: "/images/spacex.webp",    alt: "SpaceX",    size: 80,  orbit: 1, xPct: 28, yPct: 64, ampX: 16, ampY: 20, speed: 0.45, phase: 0.9, rotAmp: 10, layer: "front" },
-  { src: "/images/google.webp",    alt: "Google",    size: 80,  orbit: 1, xPct: 68, yPct: 66, ampX: 20, ampY: 18, speed: 0.34, phase: 2.8, rotAmp: 6,  layer: "front" },
+  { src: "/images/microsoft.webp", alt: "Microsoft", size: 72, orbit: 1, xPct: 25, yPct: 31, ampX: 18, ampY: 22, speed: 0.42, phase: 3.1, rotAmp: 9,  layer: "mid"   },
+  { src: "/images/qqq.webp",       alt: "QQQ",       size: 64, orbit: 1, xPct: 70, yPct: 27, ampX: 22, ampY: 16, speed: 0.38, phase: 5.3, rotAmp: 7,  layer: "front" },
+  { src: "/images/spacex.webp",    alt: "SpaceX",    size: 64, orbit: 1, xPct: 28, yPct: 65, ampX: 16, ampY: 20, speed: 0.45, phase: 0.9, rotAmp: 10, layer: "front" },
+  { src: "/images/google.webp",    alt: "Google",    size: 64, orbit: 1, xPct: 68, yPct: 65, ampX: 20, ampY: 18, speed: 0.34, phase: 2.8, rotAmp: 6,  layer: "front" },
 ];
 
-/** orbit rings: [outer, inner] — elliptical paths around the centered copy */
-const ORBITS = [
-  { rx: 500, ry: 360, duration: 70, direction: 1 }, // slow clockwise
-  { rx: 300, ry: 215, duration: 48, direction: -1 }, // faster counter-clockwise
+/**
+ * Orbit rings (px at scale 1, desktop): wide ellipses with generous
+ * clearance around the centered copy, morpho-style. Counter-rotating.
+ */
+const RINGS = [
+  { rx: 640, ry: 450, duration: 95, direction: 1 }, // outer — slow clockwise
+  { rx: 410, ry: 295, duration: 62, direction: -1 }, // inner — counter-clockwise
 ];
 
 const LAYER_CLASS: Record<OrbitIcon["layer"], string> = {
-  // on the outer wrapper (which carries the transform) so z-order isn't
-  // trapped inside a transformed stacking context
+  // depth order AMONG icons only — the whole layer sits at z-0, behind the
+  // copy (z-10), so no icon ever covers the text
   back: "z-0",
   mid: "z-10",
   front: "z-20",
 };
 
 const LAYER_FX: Record<OrbitIcon["layer"], string> = {
-  // back sits "behind" the copy — soft focus + dimmed for depth
+  // back sits deepest — soft focus + dimmed for depth. Static class (rasterized
+  // once), never animated: animating blur filters per-frame melts phone GPUs.
   back: "blur-[1.5px] brightness-[0.8]",
   mid: "",
   front: "",
@@ -75,8 +79,11 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
  *   - pin active + progress < 0.93 → floating (zero-g drift)
  *   - pin active + progress >= 0.97 → orbit (two elliptical rings around copy)
  *   - pin inactive → icons exit
- * Enter = fade in from far (scale + blur + rise). Exit = fade out + dissolve.
- * One gsap.ticker drives every icon; a blend value morphs float <-> orbit.
+ * Enter = grow from invisible (scale 0) to full size as the section settles.
+ * Exit = shrink back to invisible. Opacity + transform only — no blur filters,
+ * so the animation stays on the compositor and never janks.
+ * One gsap.ticker drives every icon, but ONLY while the pin is active; a blend
+ * value morphs float <-> orbit.
  */
 function Floaters({
   registerHandler,
@@ -104,14 +111,43 @@ function Floaters({
     if (outers.length !== ICONS.length) return;
 
     // ---- responsive measurements --------------------------------------
+    // Rings scale to fit the viewport; the copy is measured so the rings keep
+    // clearance around it instead of plowing through the text.
     let W = 0;
     let H = 0;
-    let orbitScale = 1;
+    let ringRx = [RINGS[0]!.rx, RINGS[1]!.rx];
+    let ringRy = [RINGS[0]!.ry, RINGS[1]!.ry];
     const measure = () => {
       W = layer.clientWidth;
       H = layer.clientHeight;
-      orbitScale = Math.min(Math.max(Math.min(W / 1200, H / 800), 0.45), 1);
-      const iconScale = Math.max(orbitScale, 0.62);
+      const copyBox = layer.parentElement?.querySelector<HTMLElement>(
+        ".wipe-copy > *"
+      );
+      const cw = copyBox?.offsetWidth ?? 0;
+      const ch = copyBox?.offsetHeight ?? 0;
+      const clearance = W < 768 ? 90 : 130;
+      const needRx = cw / 2 + clearance;
+      const needRy = ch / 2 + clearance;
+
+      // fit the (clearance-aware) outer ring inside the viewport
+      const wantRx = Math.max(RINGS[0]!.rx, needRx);
+      const wantRy = Math.max(RINGS[0]!.ry, needRy);
+      const fit = Math.min(
+        1,
+        (W / 2 - 40) / wantRx,
+        (H / 2 - 40) / wantRy
+      );
+      const s = Math.max(fit, 0.35);
+      ringRx = [
+        wantRx * s,
+        Math.max(RINGS[1]!.rx, needRx * 0.66) * s,
+      ];
+      ringRy = [
+        wantRy * s,
+        Math.max(RINGS[1]!.ry, needRy * 0.66) * s,
+      ];
+
+      const iconScale = Math.max(s, 0.55);
       boxes.forEach((box, i) => {
         const icon = ICONS[i];
         if (!icon) return;
@@ -130,7 +166,7 @@ function Floaters({
         if (ICONS[j]?.orbit === icon.orbit) idx++;
       }
       const count = ICONS.filter((ic) => ic.orbit === icon.orbit).length;
-      return { ring: ORBITS[icon.orbit]!, idx, count };
+      return { ring: RINGS[icon.orbit]!, idx, count };
     });
 
     // ---- shared state ---------------------------------------------------
@@ -143,6 +179,8 @@ function Floaters({
     gsap.set(outers, { xPercent: -50, yPercent: -50 });
 
     const tick = () => {
+      // pin not on screen: skip all per-frame work (battery + heat)
+      if (!mode.active) return;
       const t = gsap.ticker.time;
       const b = blend.v;
       const cx = W / 2;
@@ -164,8 +202,8 @@ function Floaters({
         const ang =
           (slot.idx / slot.count) * Math.PI * 2 +
           slot.ring.direction * ((t * Math.PI * 2) / slot.ring.duration);
-        const ox = cx + Math.cos(ang) * slot.ring.rx * orbitScale;
-        const oy = cy + Math.sin(ang) * slot.ring.ry * orbitScale;
+        const ox = cx + Math.cos(ang) * ringRx[icon.orbit]!;
+        const oy = cy + Math.sin(ang) * ringRy[icon.orbit]!;
         gsap.set(el, {
           x: lerp(fx, ox, b),
           y: lerp(fy, oy, b),
@@ -191,19 +229,21 @@ function Floaters({
     }
 
     // ---- enter / exit -----------------------------------------------------
+    // transform + opacity only: from invisible (scale 0) up to full size on
+    // settle, back down to invisible on exit. No blur — blur filters force a
+    // re-raster every frame and are the main source of the scroll jank.
     const enterIcons = () => {
       gsap.killTweensOf(anims);
       gsap.fromTo(
         anims,
-        { autoAlpha: 0, scale: 0.25, y: 140, filter: "blur(8px)" },
+        { autoAlpha: 0, scale: 0, y: 70 },
         {
           autoAlpha: 1,
           scale: 1,
           y: 0,
-          filter: "blur(0px)",
-          duration: 1.1,
-          ease: "power3.out",
-          stagger: 0.07,
+          duration: 1.2,
+          ease: "back.out(1.5)",
+          stagger: 0.08,
           overwrite: true,
         }
       );
@@ -212,12 +252,11 @@ function Floaters({
       gsap.killTweensOf(anims);
       gsap.to(anims, {
         autoAlpha: 0,
-        scale: 0.45,
-        y: -80,
-        filter: "blur(10px)",
-        duration: 0.7,
-        ease: "power2.in",
-        stagger: 0.04,
+        scale: 0,
+        y: -50,
+        duration: 0.6,
+        ease: "back.in(1.4)",
+        stagger: 0.035,
         overwrite: true,
       });
     };
@@ -255,6 +294,7 @@ function Floaters({
     return () => {
       window.removeEventListener("resize", measure);
       gsap.ticker.remove(tick);
+      gsap.killTweensOf(blend);
       registerHandler(() => {});
     };
   }, [registerHandler]);
@@ -262,14 +302,19 @@ function Floaters({
   return (
     <div
       ref={layerRef}
-      className="pointer-events-none absolute inset-0"
+      // z-0: creates a stacking context, so every icon stays BEHIND the copy
+      // (z-10) — icons can never cover the text, even mid-orbit.
+      className="pointer-events-none absolute inset-0 z-0"
       aria-hidden="true"
     >
       {ICONS.map((icon) => (
         <div
           key={icon.src}
           data-floater
-          className={cn("absolute top-0 left-0", LAYER_CLASS[icon.layer])}
+          className={cn(
+            "absolute top-0 left-0 will-change-transform",
+            LAYER_CLASS[icon.layer]
+          )}
         >
           <div data-floater-anim className="opacity-0">
             <div
@@ -300,6 +345,7 @@ function Floaters({
  * Section 2 — dark wipes to teal, revealing the token lineup.
  * Icons float in zero-g while the wipe runs, then settle into two
  * elliptical orbits around the copy once the section is in place.
+ * All icons render behind the copy.
  */
 export function TokenLineup() {
   const handlerRef = useRef<(self: ScrollTrigger) => void>(() => {});

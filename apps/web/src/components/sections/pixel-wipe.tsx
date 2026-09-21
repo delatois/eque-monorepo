@@ -157,10 +157,23 @@ export function PixelWipe({
       render(); // paint initial (empty) frame
 
       const onResize = () => {
-        buildGrid();
-        render();
-        ScrollTrigger.refresh();
+        // Debounced + width-gated: on mobile, showing/hiding the URL bar fires
+        // resize with only a height change. Rebuilding the grid and calling
+        // ScrollTrigger.refresh() there caused the visible freeze when
+        // scrolling back up. Height-only changes don't need either (the
+        // section is h-svh, which already tracks the small viewport).
+        window.clearTimeout(resizeTimer);
+        resizeTimer = window.setTimeout(() => {
+          const w = window.innerWidth;
+          if (Math.abs(w - lastWidth) < 2) return;
+          lastWidth = w;
+          buildGrid();
+          render();
+          ScrollTrigger.refresh();
+        }, 200);
       };
+      let resizeTimer: number | undefined;
+      let lastWidth = window.innerWidth;
       window.addEventListener("resize", onResize);
 
       // ---- reduced motion: jump to final state ----------------------------
@@ -213,6 +226,7 @@ export function PixelWipe({
       document.fonts?.ready.then(() => ScrollTrigger.refresh()).catch(() => {});
 
       return () => {
+        window.clearTimeout(resizeTimer);
         window.removeEventListener("resize", onResize);
       };
     },
