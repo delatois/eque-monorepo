@@ -39,6 +39,8 @@ interface PixelWipeProps {
   children: ReactNode;
   /** optional absolutely-positioned floating layer (icons, etc.) */
   floaters?: ReactNode;
+  /** fires on ScrollTrigger update + toggle — lets floaters react to scroll phase */
+  onTrigger?: (self: ScrollTrigger) => void;
 }
 
 /**
@@ -60,6 +62,7 @@ export function PixelWipe({
   label,
   children,
   floaters,
+  onTrigger,
 }: PixelWipeProps) {
   const sectionRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -164,7 +167,6 @@ export function PixelWipe({
       if (reduceMotion) {
         gsap.set(section, { backgroundColor: to });
         gsap.set(canvas, { display: "none" });
-        gsap.set(".wipe-icon", { scale: 1, autoAlpha: 1 });
         gsap.set(".wipe-copy", { autoAlpha: 1, y: 0 });
         window.removeEventListener("resize", onResize);
         return;
@@ -183,6 +185,10 @@ export function PixelWipe({
           onUpdate: (self) => {
             progressRef.current = self.progress;
             render();
+            onTrigger?.(self);
+          },
+          onToggle: (self) => {
+            onTrigger?.(self);
           },
         },
       });
@@ -194,14 +200,8 @@ export function PixelWipe({
       // canvas fades once the screen is flooded
       tl.to(canvas, { autoAlpha: 0, duration: 0.06 }, 0.8);
       tl.addLabel("reveal", 0.82);
-      if (section.querySelectorAll(".wipe-icon").length > 0) {
-        tl.fromTo(
-          ".wipe-icon",
-          { scale: 0, autoAlpha: 0 },
-          { scale: 1, autoAlpha: 1, duration: 0.08, stagger: 0.012 },
-          "reveal"
-        );
-      }
+      // NOTE: floater visibility is owned by the floaters component itself
+      // (via onTrigger) — the wipe timeline stays out of it.
       tl.fromTo(
         ".wipe-copy",
         { autoAlpha: 0, y: 60 },
